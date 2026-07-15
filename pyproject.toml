@@ -16,3 +16,7 @@ dev = [
     "shapely>=2.1.2",
     "trimesh>=4.12.2",
 ]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"

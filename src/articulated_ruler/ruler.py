@@ -91,15 +91,29 @@ SEG_LEN: Final[float] = 25.4  # Segment length (pivot centre to pivot centre) = 
 BAR_T: Final[float] = 3.2  # Segment thickness (flat, single print job)
 
 PIN_D: Final[float] = 3.4
-PIN_CLEARANCE: Final[float] = 0.5  # radial gap for a free-spinning FDM print-in-place pivot; loosen if joints fuse
+PIN_CLEARANCE: Final[float] = (
+    0.5  # radial gap for a free-spinning FDM print-in-place pivot; loosen if joints fuse
+)
 
-CONNECTOR_T: Final[float] = 2.2  # Connector collar thickness (solid part above the pocket)
-Z_GAP: Final[float] = 0.15  # air gap between Segment underside and Connector top, so their caps never touch/fuse
-HEAD_GAP: Final[float] = 0.3  # air gap above the rivet head (inside the pocket), so the head spins free
+CONNECTOR_T: Final[float] = (
+    2.2  # Connector collar thickness (solid part above the pocket)
+)
+Z_GAP: Final[float] = (
+    0.15  # air gap between Segment underside and Connector top, so their caps never touch/fuse
+)
+HEAD_GAP: Final[float] = (
+    0.3  # air gap above the rivet head (inside the pocket), so the head spins free
+)
 HEAD_T: Final[float] = 0.8  # rivet head thickness
-HEAD_MARGIN: Final[float] = 0.6  # how much wider the rivet head is than the hole -> positive Z retention
-POCKET_CLEARANCE: Final[float] = 0.4  # radial gap between the rivet head and the Connector's pocket wall
-FLUSH_RECESS: Final[float] = 0.15  # how far the Connector's flat bottom sits below the rivet head -> head never bears load
+HEAD_MARGIN: Final[float] = (
+    0.6  # how much wider the rivet head is than the hole -> positive Z retention
+)
+POCKET_CLEARANCE: Final[float] = (
+    0.4  # radial gap between the rivet head and the Connector's pocket wall
+)
+FLUSH_RECESS: Final[float] = (
+    0.15  # how far the Connector's flat bottom sits below the rivet head -> head never bears load
+)
 
 HOLE_SPACING: Final[float] = 12.0  # distance between the Connector's two hole centres
 CONN_W: Final[float] = 8.0  # Connector plate width
@@ -112,14 +126,18 @@ _CAP_MARGIN: Final[float] = 0.3
 # flat bottom. The Segment's plain middle (away from both tips) thickens
 # down to this same depth, so the ruler reads as one uniform thickness
 # instead of thin straps between thick joints.
-CONNECTOR_BOTTOM_Z: Final[float] = -(Z_GAP + CONNECTOR_T + HEAD_GAP + HEAD_T + FLUSH_RECESS)
+CONNECTOR_BOTTOM_Z: Final[float] = -(
+    Z_GAP + CONNECTOR_T + HEAD_GAP + HEAD_T + FLUSH_RECESS
+)
 
 # Keep-clear zone from each tip before the Segment's middle thickens - must
 # clear the Connector's own end-cap reach (CONN_W / 2 - _CAP_MARGIN) with a
 # small buffer, or the thickened middle would collide with the Connector.
 MID_MARGIN: Final[float] = (CONN_W / 2 - _CAP_MARGIN) + 0.3
 
-TIP_GAP: Final[float] = 0.2  # gap between neighbouring Segment tip caps at rest - just above 0 so the top reads as one continuous surface without segments ever fusing in the slicer
+TIP_GAP: Final[float] = (
+    0.2  # gap between neighbouring Segment tip caps at rest - just above 0 so the top reads as one continuous surface without segments ever fusing in the slicer
+)
 
 # CAP_R is the tip cap's radius, AND (see _segment) how far each jointed
 # pivot sits inset from its own Segment's physical tip - the cap is always
@@ -190,11 +208,15 @@ def _rivet(hole_r: float) -> PartLike:
 
     shaft: PartLike = Cylinder(radius=pin_r, height=0.5 - shaft_bottom, align=_ALIGN)
     shaft = Pos(0, 0, shaft_bottom) * shaft
-    head: PartLike = Pos(0, 0, head_bottom) * Cylinder(radius=head_r, height=HEAD_T, align=_ALIGN)
+    head: PartLike = Pos(0, 0, head_bottom) * Cylinder(
+        radius=head_r, height=HEAD_T, align=_ALIGN
+    )
     return shaft + head
 
 
-def _segment(spec: SegmentSpec, *, left_joint: bool = True, right_joint: bool = True) -> PartLike:
+def _segment(
+    spec: SegmentSpec, *, left_joint: bool = True, right_joint: bool = True
+) -> PartLike:
     """Stadium-shaped bar, always exactly `spec.length` long - no exceptions
     for the chain's free ends.
 
@@ -217,9 +239,17 @@ def _segment(spec: SegmentSpec, *, left_joint: bool = True, right_joint: bool = 
 
     free_edges: list[Edge] = []
     if not left_joint:
-        free_edges += [e for e in box.edges().filter_by(Axis.Z) if e.bounding_box().min.X < spec.length / 2]
+        free_edges += [
+            e
+            for e in box.edges().filter_by(Axis.Z)
+            if e.bounding_box().min.X < spec.length / 2
+        ]
     if not right_joint:
-        free_edges += [e for e in box.edges().filter_by(Axis.Z) if e.bounding_box().min.X > spec.length / 2]
+        free_edges += [
+            e
+            for e in box.edges().filter_by(Axis.Z)
+            if e.bounding_box().min.X > spec.length / 2
+        ]
     part: PartLike = fillet(free_edges, radius=CAP_R) if free_edges else box
 
     for pivot_x, region_lo, jointed in (
@@ -228,17 +258,27 @@ def _segment(spec: SegmentSpec, *, left_joint: bool = True, right_joint: bool = 
     ):
         if not jointed:
             continue
-        region: PartLike = Pos(region_lo, 0, 0) * Box(CAP_R, spec.width, spec.thickness, align=_XALIGN)
-        roundoff: PartLike = Pos(pivot_x, 0, 0) * Cylinder(radius=CAP_R, height=spec.thickness, align=_ALIGN)
+        region: PartLike = Pos(region_lo, 0, 0) * Box(
+            CAP_R, spec.width, spec.thickness, align=_XALIGN
+        )
+        roundoff: PartLike = Pos(pivot_x, 0, 0) * Cylinder(
+            radius=CAP_R, height=spec.thickness, align=_ALIGN
+        )
         corners: PartLike = region - roundoff
         part = _solid(part - corners + Pos(pivot_x, 0, 0) * _rivet(hole_r))
 
     mid_lo: float = (CAP_R + MID_MARGIN) if left_joint else MID_MARGIN
-    mid_hi: float = (spec.length - CAP_R - MID_MARGIN) if right_joint else (spec.length - MID_MARGIN)
+    mid_hi: float = (
+        (spec.length - CAP_R - MID_MARGIN)
+        if right_joint
+        else (spec.length - MID_MARGIN)
+    )
     if mid_hi > mid_lo:
         thick_height: float = -CONNECTOR_BOTTOM_Z
         thick_align: _Align3 = (Align.MIN, Align.CENTER, Align.MAX)
-        thick: PartLike = Pos(mid_lo, 0, 0) * Box(mid_hi - mid_lo, spec.width, thick_height, align=thick_align)
+        thick: PartLike = Pos(mid_lo, 0, 0) * Box(
+            mid_hi - mid_lo, spec.width, thick_height, align=thick_align
+        )
         part = _solid(part + thick)
     return part
 
@@ -259,18 +299,28 @@ def _connector() -> PartLike:
     bottom: float = head_bottom - FLUSH_RECESS
     thickness: float = top - bottom
 
-    part: PartLike = Pos(0, 0, top) * Box(HOLE_SPACING, CONN_W, thickness, align=_TOP_ALIGN)
+    part: PartLike = Pos(0, 0, top) * Box(
+        HOLE_SPACING, CONN_W, thickness, align=_TOP_ALIGN
+    )
     for x in (-HOLE_SPACING / 2, HOLE_SPACING / 2):
-        cap: PartLike = Pos(x, 0, top) * Cylinder(radius=cap_r, height=thickness, align=_TOP_ALIGN)
+        cap: PartLike = Pos(x, 0, top) * Cylinder(
+            radius=cap_r, height=thickness, align=_TOP_ALIGN
+        )
         part = _solid(part + cap)
     for x in (-HOLE_SPACING / 2, HOLE_SPACING / 2):
-        collar_bore: PartLike = Pos(x, 0, top) * Cylinder(radius=hole_r, height=top - collar_bottom, align=_TOP_ALIGN)
-        pocket: PartLike = Pos(x, 0, collar_bottom) * Cylinder(radius=pocket_r, height=collar_bottom - bottom, align=_TOP_ALIGN)
+        collar_bore: PartLike = Pos(x, 0, top) * Cylinder(
+            radius=hole_r, height=top - collar_bottom, align=_TOP_ALIGN
+        )
+        pocket: PartLike = Pos(x, 0, collar_bottom) * Cylinder(
+            radius=pocket_r, height=collar_bottom - bottom, align=_TOP_ALIGN
+        )
         part = part - collar_bore - pocket
     return part
 
 
-def _segment_piece(spec: SegmentSpec, x: float, *, left_joint: bool, right_joint: bool) -> PartLike:
+def _segment_piece(
+    spec: SegmentSpec, x: float, *, left_joint: bool, right_joint: bool
+) -> PartLike:
     """A fully positioned Segment whose own box starts at `x` (its left edge,
     before any pivot inset) and runs `spec.length` further."""
     return Pos(x, 0, 0) * _segment(spec, left_joint=left_joint, right_joint=right_joint)
@@ -298,7 +348,9 @@ def build_ruler(specs: Sequence[SegmentSpec] | None = None) -> PartLike:
     for i, spec in enumerate(specs):
         left_joint: bool = i > 0
         right_joint: bool = i < len(specs) - 1
-        pieces.append(_segment_piece(spec, cursor, left_joint=left_joint, right_joint=right_joint))
+        pieces.append(
+            _segment_piece(spec, cursor, left_joint=left_joint, right_joint=right_joint)
+        )
         seg_end: float = cursor + spec.length
         if right_joint:
             pieces.append(_junction_piece(seg_end + TIP_GAP / 2))
