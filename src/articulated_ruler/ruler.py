@@ -66,6 +66,7 @@ close the top gap (down from ~140 degrees at the old, narrower width) - if
 a tighter zigzag fold is needed later, HOLE_SPACING/BAR_W can be retuned.
 """
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -75,14 +76,16 @@ from build123d import (
     Align,
     Axis,
     Box,
-    chamfer,
     Compound,
     Curve,
     Cylinder,
     Edge,
+    GeomType,
     Part,
     Pos,
+    Rotation,
     Wire,
+    chamfer,
     export_step,
     export_stl,
     fillet,
@@ -117,7 +120,12 @@ FLUSH_RECESS: Final[float] = (
 )
 
 HOLE_SPACING: Final[float] = 12.0  # distance between the Connector's two hole centres
-CONN_W: Final[float] = 8.0  # Connector plate width
+# Widened from 8.0mm to fit the pivot collar's catch bump (see COLLAR_* below)
+# with real safety margin inside the Connector's own edge - the original
+# 8.0mm left only ~1mm of radial room total between the rivet's own pocket
+# and the Connector's edge, not enough for a boss ring AND a nozzle-safe
+# bump AND clearance margins on both sides at once.
+CONN_W: Final[float] = 9.0  # Connector plate width
 
 # Full stack depth at a joint: Segment top (z=0) down to the Connector's own
 # flat bottom. The Segment's plain middle (away from both tips) thickens
@@ -187,7 +195,177 @@ BOTTOM_FILLET_R: Final[float] = EDGE_CHAMFER
 # rounding.
 STEP_ROUND_R: Final[float] = 1.2
 
-NUM_LINKS: Final[int] = 6
+# The ruler's "closed" fold angle: how far one Segment rotates about its own
+# pivot, relative to its fixed neighbour+Connector, before "side by side,
+# long edges touching" (measured via an ad hoc collision sweep - rotate one
+# Segment against a fixed neighbour+Connector, find the first angle with
+# non-zero exact intersection volume - see DEVELOPMENT.md; came out to
+# ~93 degrees on this geometry). FOLD_CLOSED_DEG sits a few degrees short of
+# that measured limit, for tolerance margin.
+#
+# See DEVELOPMENT.md's "Snap catch for a fully-closed ruler" section for
+# three tried-and-reverted attempts (pivot-bore ball detent; Connector-edge
+# flex tab; a cam bump/tooth pair crammed inside the ~2mm pivot bore, in
+# three sizing passes) before the current one below.
+FOLD_CLOSED_DEG: Final[float] = 90.0
+
+# Rivet head's own pocket radius - reused below since the new pivot collar
+# (COLLAR_R_IN) has to clear it too, not just _connector's own local pocket.
+POCKET_R: Final[float] = (PIN_D + PIN_CLEARANCE) / 2 + HEAD_MARGIN + POCKET_CLEARANCE
+
+# Snap catch, attempt 5: a dedicated "pivot collar" - a raised boss on the
+# Connector's top face, around each hole, sitting in all-new Z headroom
+# (COLLAR_HEIGHT) rather than reusing the cramped pivot bore or the fold's
+# own collision envelope like every prior attempt. Every earlier attempt
+# tried to fit a catch feature into a space that was never big enough for
+# one (a ~2mm bore radius, or the 0.15mm Z_GAP) - this instead opens real
+# room for it, sized in whole millimetres rather than fractions of the
+# nozzle width. Two matching pieces:
+#   - Connector: a full-circle boss, radius COLLAR_R_IN to COLLAR_R_OUT,
+#     height COLLAR_HEIGHT, with a small BUMP protruding OUTWARD from its
+#     wall at each of the two "closed" world angles (+-FOLD_CLOSED_DEG).
+#   - Segment: a matching full-circle recess cut into its own underside
+#     (same radius band, so the boss - being a fixed full ring in the world
+#     frame - never collides with un-recessed Segment material at ANY fold
+#     angle; a partial-arc recess was tried first and rejected on paper -
+#     any un-recessed "back" material at this radius band rotates straight
+#     into the boss's own footprint after only a few degrees of fold, since
+#     the boss occupies every world angle), housing a cantilevered flex tab.
+#     The tab is a thin arc-shaped rib running tangentially - most of its
+#     length hangs free inside the recess, with a small radial "root" at one
+#     end poking OUTWARD past the recess's own outer radius (RECESS_R) to
+#     fuse with solid, un-recessed Segment material just beyond it - a
+#     radius the boss never reaches, so this anchor never collides with
+#     anything regardless of fold angle. Free at the other end, at local
+#     angle 0 (the assembly's own rest orientation). A radial push from the
+#     boss's bump is then a transverse (bending) load on this tangential
+#     beam, not an axial one a beam barely deflects under.
+#
+# First version of this used a constant PRELOAD instead (tab's nominal
+# reach always poking slightly past the boss's plain wall, relaxing into a
+# NOTCH at the catch position) - reverted after export showed 1 fused
+# watertight body instead of 5. Root cause: a static boolean model has no
+# concept of "meant to flex apart" - any interference present in the
+# AS-BUILT (rest) orientation is just permanent geometric overlap to a
+# straightforward union, identical to attempt 1's own fusion failure. The
+# fix is the same lesson attempt 1 eventually needed: ZERO interference at
+# rest and through the free-fold range, with a real, localized BUMP that
+# only reaches into contact once the tab (rotating with the Segment) sweeps
+# near +-FOLD_CLOSED_DEG - the same "matched asymmetric feature pair"
+# topology as the reverted cam-bump-in-bore attempt, just relocated to a
+# radius/arc scale big enough to print reliably. Fitting the bump without
+# it poking past the Connector's own edge needed CONN_W widened too (see
+# above) - the original 8mm width left under 1mm of total radial room
+# between the rivet's pocket and the Connector's edge, not enough for a
+# boss ring AND a nozzle-safe bump AND clearance margins on both sides.
+# Reversible: the bump's own sides are symmetric, so the tab can be pushed
+# back off it by hand, unlike a one-way ratchet ramp.
+COLLAR_R_IN: Final[float] = POCKET_R + 0.15  # clears the rivet's own pocket wall
+COLLAR_HEIGHT: Final[float] = 1.2  # dedicated Z headroom, above the Connector's existing top
+COLLAR_CLEARANCE: Final[float] = 0.2  # Z clearance, boss top to the Segment's recess ceiling
+COLLAR_RADIAL_CLEARANCE: Final[float] = 0.15  # radial clearance, boss walls to recess walls
+
+# Attempt 5.1 used a flat-topped radial WEDGE for the bump (sharp-cornered,
+# rectangular in cross-section) - per the user's own explicit correction,
+# not what was actually wanted: "a semicylinder bump and a same size
+# cylinder indent". Both are now a plain vertical Cylinder, not a wedge:
+# - Connector (the boss, "the circle"): a small cylinder centred exactly
+#   ON the boss's own outer wall (radius COLLAR_R_OUT) - since its centre
+#   sits right at that radius, half of it (the outer half) protrudes past
+#   the wall as a true semicylinder bead (flat side flush with the wall,
+#   round side outward), the other half is embedded in the boss's own
+#   material for a clean union.
+# - Segment (the tab, "the external piece"): a matching, slightly larger
+#   cylinder cut INTO the tab's own free tip (local angle 0 - the same
+#   point that lands exactly on a bump's own position once the joint
+#   reaches +-FOLD_CLOSED_DEG) - a same-size round indent, not a flat
+#   notch.
+# Mechanically unchanged from 5.1's own reasoning: away from the bump, the
+# tab's nominal clearance means no contact at all; sweeping toward
+# +-FOLD_CLOSED_DEG, the bead (reaching further out than that nominal
+# clearance) pushes the tab out; at exactly the closed angle, the tab's own
+# round indent lands on the bead and lets it seat, releasing the tab back
+# toward rest - the actual push-then-release click, now with a rounded
+# profile that seats more smoothly than the old wedge's sharp corners.
+# Reversible either way (both are round, no one-way ratchet face).
+COLLAR_BEAD_R: Final[float] = 0.5  # bead cylinder radius - half of this (0.25mm) is the actual protrusion past COLLAR_R_OUT... no: the WHOLE radius protrudes, since the bead's own centre sits ON the wall (see above) - past one nozzle width comfortably
+COLLAR_GROOVE_R: Final[float] = (
+    COLLAR_BEAD_R + 0.1  # the Segment's matching indent - a little larger than the bead for a free, non-interference seat once aligned. Kept a real margin short of the tab's own outer wall (COLLAR_R_OUT + COLLAR_TAB_CLEARANCE + COLLAR_TAB_THICKNESS) - an earlier value put the groove's own outer edge EXACTLY there (an unintended tangency), which left a sliver of tab material pinched off as its own disconnected body (caught by the watertight-body count)
+)
+# Rounds the bead's own top/bottom rim (softer, less snag-prone contact
+# against the tab) and the groove's own top/bottom rim (a small funnel
+# easing the bead in and out) - small, since both features are themselves
+# only ~1mm across, but a real, deliberate break rather than a hard
+# printed corner on the two surfaces that actually rub against each other.
+COLLAR_BEAD_FILLET_R: Final[float] = 0.15
+
+# Stays inside the Connector's own cap edge (CONN_W / 2) even with the bead
+# at its biggest reach, plus a real safety margin.
+COLLAR_R_OUT: Final[float] = CONN_W / 2 - COLLAR_BEAD_R - 0.2
+
+# The flex tab's own cantilever run, anchored at -COLLAR_TAB_ARC_DEG, free at
+# 0 - must stay entirely within the "quiet zone" between 0 and a bead's own
+# angular position (a single point at +-FOLD_CLOSED_DEG now, not a wide arc,
+# since the bead is a small-radius cylinder rather than the old wedge - a
+# 50-degree run leaves enormous margin). A first version (with the old,
+# much wider wedge bump) spanned 110 degrees, reaching straight through the
+# -90 degree bump's own position - not just a modeling quirk: the tab's
+# whole BODY (not just its tip) is rigidly part of the Segment, so at the
+# flat/rest orientation used for printing, it already occupied the same
+# angle as the bump, a real interference baked into the as-printed geometry
+# (caught the same way as the rest of this project's real bugs - re-running
+# the intersection check, this time pairwise between the tab and each bump
+# specifically, not just eyeballing the sweep). Shortened with margin so the
+# tab's own footprint never reaches the bead at any rotation this model
+# actually represents (only the printed, unrotated state) - the engagement
+# only happens later, when a real hand physically rotates the joint past
+# its printed orientation.
+COLLAR_TAB_ARC_DEG: Final[float] = 50.0
+COLLAR_TAB_ROOT_ARC_DEG: Final[float] = (
+    15.0  # angular width of the tab's own anchor "root", at its -COLLAR_TAB_ARC_DEG end
+)
+# A hole cut EXACTLY at the tab's own free tip (local angle 0, its
+# leading edge) can never register the "ramp" half of a detent: the tip
+# IS the leading edge of the whole tab, so as it sweeps toward a bead's
+# fixed world position, nothing else on the tab ever gets there first for
+# the bead to push against - the hole (not solid material) is always what
+# arrives. A real ramp needs solid material AHEAD of the hole (at a small
+# positive local angle), so IT reaches the bead's position first (forcing
+# the tab to deflect) before the hole itself, trailing slightly behind,
+# arrives and relieves it right at FOLD_CLOSED_DEG. COLLAR_TAB_OVERHANG_DEG
+# is how far past local angle 0 that solid overhang runs - must clear the
+# groove's own angular reach (roughly COLLAR_GROOVE_R / COLLAR_R_OUT in
+# radians, ~9 degrees here) with real margin, or the groove (below) simply
+# hollows out the whole overhang and there is no solid ramp material left.
+COLLAR_TAB_OVERHANG_DEG: Final[float] = 14.0
+COLLAR_TAB_THICKNESS: Final[float] = (
+    0.5  # tab's own radial thickness - thin, so it can flex (strain scales with thickness for a given deflection - see COLLAR_BEAD_R)
+)
+COLLAR_TAB_CLEARANCE: Final[float] = (
+    0.2  # genuine POSITIVE clearance between the tab's own nominal (unflexed) reach and the boss's plain wall - zero interference at rest and through the free-fold range, unlike the reverted preload version
+)
+COLLAR_TAB_HEIGHT: Final[float] = 0.8  # tab's own Z extent, within the recess
+# Kept off Z=0 on purpose: `_jointed_tip_bottom_rim_edges` fillets any flat
+# face it finds sitting exactly at Z=0 (the Segment's own bottom plane) at
+# BOTTOM_FILLET_R - a tab/root starting exactly there got its own thin
+# bottom edges swept into that same 0.4mm fillet and failed outright
+# (insufficient material at the tab's own 0.7mm thickness). A small lift
+# keeps the tab's own faces off that plane entirely, while staying well
+# within the boss's own Z range for genuine overlap.
+COLLAR_TAB_Z_LO: Final[float] = 0.1
+COLLAR_TAB_ROOT_OVERREACH: Final[float] = (
+    0.15  # how far the tab's own root pokes past RECESS_R, into solid Segment material - just enough for a clean union
+)
+
+RECESS_R_IN: Final[float] = COLLAR_R_IN - COLLAR_RADIAL_CLEARANCE
+# Clears the tab's own nominal outer reach (COLLAR_R_OUT + COLLAR_TAB_CLEARANCE
+# + COLLAR_TAB_THICKNESS), not just the boss's plain wall.
+RECESS_R: Final[float] = (
+    COLLAR_R_OUT + COLLAR_TAB_CLEARANCE + COLLAR_TAB_THICKNESS + COLLAR_RADIAL_CLEARANCE
+)
+RECESS_CEIL_Z: Final[float] = -Z_GAP + COLLAR_HEIGHT + COLLAR_CLEARANCE
+
+NUM_LINKS: Final[int] = 3
 
 type _Align3 = tuple[Align, Align, Align]
 _XALIGN: Final[_Align3] = (Align.MIN, Align.CENTER, Align.MIN)
@@ -290,6 +468,106 @@ def _jointed_tip_bottom_rim_edges(
     return edges
 
 
+def _radial_wedge(
+    r_lo: float, r_hi: float, arc_deg: float, center_deg: float, z_lo: float, height: float
+) -> PartLike:
+    """A small annular sliver spanning radius [r_lo, r_hi], centred on the Z
+    axis at (x=0, y=0), occupying only `arc_deg` of the full circle around
+    `center_deg` (0 = local +X), from `z_lo` up by `height`. Used for both
+    the pin-side catch bump and the bore-side catch tooth (see
+    CATCH_BUMP_ARC_DEG et al.) - built as a full annulus intersected with a
+    generously-oversized box wedge (not a true pie slice, but close enough
+    at these small arc widths, and far simpler than constructing one)."""
+    half_w: float = r_hi * math.tan(math.radians(arc_deg / 2)) * 1.3
+    box: PartLike = Pos(r_hi / 2, 0, z_lo) * Box(
+        r_hi, 2 * half_w, height, align=(Align.CENTER, Align.CENTER, Align.MIN)
+    )
+    box = Rotation(0, 0, center_deg) * box
+    annulus: PartLike = Pos(0, 0, z_lo) * Cylinder(radius=r_hi, height=height, align=_ALIGN)
+    if r_lo > 0:
+        annulus = _solid(
+            annulus - Pos(0, 0, z_lo) * Cylinder(radius=r_lo, height=height, align=_ALIGN)
+        )
+    wedge = annulus & box
+    if wedge is None:
+        raise TypeError("expected a non-empty radial wedge - check arc/radius sizing")
+    return _solid(wedge)
+
+
+def _pivot_collar_recess() -> PartLike:
+    """The Segment-side void for the new pivot collar (see COLLAR_* /
+    FOLD_CLOSED_DEG) - a full-circle annulus, centred on the local origin
+    (the pivot). Full-circle, not limited to the fold's own angular range:
+    the Connector's boss is a fixed full ring in the world frame, so any
+    un-recessed Segment material at this radius band would rotate straight
+    into it after only a few degrees of fold."""
+    return _solid(
+        Cylinder(radius=RECESS_R, height=RECESS_CEIL_Z, align=_ALIGN)
+        - Cylinder(radius=RECESS_R_IN, height=RECESS_CEIL_Z, align=_ALIGN)
+    )
+
+
+def _pivot_collar_tab() -> PartLike:
+    """The Segment-side cantilevered flex tab living inside
+    `_pivot_collar_recess`'s own void, centred on the local origin (the
+    pivot) - a thin arc-shaped rib running tangentially from local angle
+    -COLLAR_TAB_ARC_DEG (its anchor) to 0 (its free end, the assembly's own
+    rest orientation), plus a small radial "root" at the anchor end that
+    pokes past the recess's own outer radius to fuse with solid,
+    un-recessed Segment material there - a radius the Connector's boss
+    never reaches, so the anchor itself never collides with anything."""
+    tab_r_lo: float = COLLAR_R_OUT + COLLAR_TAB_CLEARANCE
+    tab_r_hi: float = tab_r_lo + COLLAR_TAB_THICKNESS
+    # Built as an exact angular wedge (annulus intersected with two precise
+    # half-space cuts), not `_radial_wedge`'s own approximate oversized box:
+    # the far edge here needs to land EXACTLY at COLLAR_TAB_OVERHANG_DEG,
+    # not "somewhere a bit past it" - `_radial_wedge`'s own oversizing left
+    # a sliver of material beyond whatever edge was assumed, disconnected
+    # from the rest once the groove (below) cut through it (caught by the
+    # watertight-body count: 9 instead of 5).
+    tab_annulus: PartLike = Pos(0, 0, COLLAR_TAB_Z_LO) * _solid(
+        Cylinder(radius=tab_r_hi, height=COLLAR_TAB_HEIGHT, align=_ALIGN)
+        - Cylinder(radius=tab_r_lo, height=COLLAR_TAB_HEIGHT, align=_ALIGN)
+    )
+    near_half: PartLike = Rotation(0, 0, -COLLAR_TAB_ARC_DEG) * (
+        Pos(0, 1000, 0) * Box(3000, 2000, 3000, align=(Align.CENTER, Align.CENTER, Align.CENTER))
+    )
+    far_half: PartLike = Rotation(0, 0, COLLAR_TAB_OVERHANG_DEG) * (
+        Pos(0, -1000, 0) * Box(3000, 2000, 3000, align=(Align.CENTER, Align.CENTER, Align.CENTER))
+    )
+    half_cut = tab_annulus & near_half
+    if half_cut is None:
+        raise TypeError("expected a non-empty tab wedge - check arc sizing")
+    wedge_cut = half_cut & far_half
+    if wedge_cut is None:
+        raise TypeError("expected a non-empty tab wedge - check arc sizing")
+    tab: PartLike = _solid(wedge_cut)
+    root: PartLike = _radial_wedge(
+        tab_r_lo,
+        RECESS_R + COLLAR_TAB_ROOT_OVERREACH,
+        COLLAR_TAB_ROOT_ARC_DEG,
+        -COLLAR_TAB_ARC_DEG + COLLAR_TAB_ROOT_ARC_DEG / 2,
+        COLLAR_TAB_Z_LO,
+        COLLAR_TAB_HEIGHT,
+    )
+    # The matching round indent - centred at the SAME radius as the bead's
+    # own centre (COLLAR_R_OUT, not the tab's own inner face), at local
+    # angle 0 (the tab's free tip - the point that lands exactly on a
+    # bead's own position once the joint reaches +-FOLD_CLOSED_DEG).
+    # Rounded before subtracting - the tool cylinder's own rim, not the
+    # tab's - so the cut leaves a smooth funnel at both openings instead of
+    # a sharp 90-degree step, the same "round before combining" logic as
+    # the bead above.
+    groove_cyl: PartLike = Cylinder(
+        radius=COLLAR_GROOVE_R, height=COLLAR_TAB_HEIGHT, align=(Align.CENTER, Align.CENTER, Align.MIN)
+    )
+    groove_cyl = fillet(
+        groove_cyl.edges().filter_by(GeomType.CIRCLE), radius=COLLAR_BEAD_FILLET_R
+    )
+    groove: PartLike = Pos(COLLAR_R_OUT, 0, COLLAR_TAB_Z_LO) * groove_cyl
+    return _solid(_solid(tab + root) - groove)
+
+
 def _rivet(hole_r: float) -> PartLike:
     """Segment-side pin: shaft through the hole, then a head too wide to pull back out."""
     pin_r: float = PIN_D / 2
@@ -302,7 +580,7 @@ def _rivet(hole_r: float) -> PartLike:
     head: PartLike = Pos(0, 0, head_bottom) * Cylinder(
         radius=head_r, height=HEAD_T, align=_ALIGN
     )
-    return shaft + head
+    return _solid(shaft + head)
 
 
 def _segment(
@@ -359,6 +637,11 @@ def _segment(
         )
         corners: PartLike = region - roundoff
         part = _solid(part - corners + Pos(pivot_x, 0, 0) * _rivet(hole_r))
+        part = _solid(
+            part
+            - Pos(pivot_x, 0, 0) * _pivot_collar_recess()
+            + Pos(pivot_x, 0, 0) * _pivot_collar_tab()
+        )
 
     # A jointed end needs MID_MARGIN clear of the Connector's own footprint.
     # A free end has no Connector there at all, so the thickened slab runs
@@ -366,9 +649,7 @@ def _segment(
     # the whole free end, straight side AND round cap, ends up one uniform
     # thickness with nothing thin or stepped left exposed.
     mid_lo: float = (CAP_R + MID_MARGIN) if left_joint else 0.0
-    mid_hi: float = (
-        (spec.length - CAP_R - MID_MARGIN) if right_joint else spec.length
-    )
+    mid_hi: float = (spec.length - CAP_R - MID_MARGIN) if right_joint else spec.length
     if mid_hi > mid_lo:
         thick_height: float = -CONNECTOR_BOTTOM_Z
         thick_align: _Align3 = (Align.MIN, Align.CENTER, Align.MAX)
@@ -429,7 +710,9 @@ def _segment(
         part = _solid(part + thick)
 
     top: PartLike = _solid(chamfer(_rim_edges(part, top=True), EDGE_CHAMFER))
-    bottom_edges: list[Edge] = _rim_edges(top, top=False) + _jointed_tip_bottom_rim_edges(
+    bottom_edges: list[Edge] = _rim_edges(
+        top, top=False
+    ) + _jointed_tip_bottom_rim_edges(
         top, spec, left_joint=left_joint, right_joint=right_joint
     )
     return _solid(fillet(bottom_edges, BOTTOM_FILLET_R))
@@ -472,7 +755,42 @@ def _connector() -> PartLike:
             radius=pocket_r, height=collar_bottom - bottom, align=_TOP_ALIGN
         )
         part = part - collar_bore - pocket
-    return _chamfer_horizontal_rims(part, EDGE_CHAMFER)
+    part = _chamfer_horizontal_rims(_solid(part), EDGE_CHAMFER)
+
+    # The pivot collar boss is added AFTER the rim chamfer, not before: it
+    # rises above the Connector's own original top surface, so if it were
+    # present during `_chamfer_horizontal_rims`, `_rim_edges` would pick the
+    # boss's own tiny top ring as the Connector's "top face" instead of its
+    # real outer silhouette (`faces().sort_by(Axis.Z)` just takes the
+    # Z-highest face) - wrong edges entirely, and the chamfer op failed
+    # outright against the boss's own tight ring geometry besides. The boss
+    # itself doesn't need a rim chamfer - it's a functional catch feature,
+    # not a user-facing edge.
+    for x in (-HOLE_SPACING / 2, HOLE_SPACING / 2):
+        boss: PartLike = _solid(
+            Pos(x, 0, top) * Cylinder(radius=COLLAR_R_OUT, height=COLLAR_HEIGHT, align=_ALIGN)
+            - Pos(x, 0, top) * Cylinder(radius=COLLAR_R_IN, height=COLLAR_HEIGHT, align=_ALIGN)
+        )
+        for target_deg in (FOLD_CLOSED_DEG, -FOLD_CLOSED_DEG):
+            rad: float = math.radians(target_deg)
+            bead_x: float = x + COLLAR_R_OUT * math.cos(rad)
+            bead_y: float = COLLAR_R_OUT * math.sin(rad)
+            bead_cyl: PartLike = Cylinder(
+                radius=COLLAR_BEAD_R, height=COLLAR_HEIGHT, align=_ALIGN
+            )
+            # Rounded before placing/unioning, not after: once fused with
+            # the boss, only the OUTER (protruding) arc of this rim survives
+            # as a real edge - the rest is absorbed into the boss's own flat
+            # top/bottom, so filleting the standalone cylinder first lands
+            # the round-over exactly on the surface that actually rubs
+            # against the tab.
+            bead_cyl = fillet(
+                bead_cyl.edges().filter_by(GeomType.CIRCLE), radius=COLLAR_BEAD_FILLET_R
+            )
+            bead: PartLike = Pos(bead_x, bead_y, top) * bead_cyl
+            boss = _solid(boss + bead)
+        part = _solid(part + boss)
+    return part
 
 
 def _segment_piece(
