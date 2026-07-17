@@ -23,7 +23,7 @@ wheels = [
 [[package]]
 name = "articulated-ruler"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "build123d" },
     { name = "ocp-vscode" },
