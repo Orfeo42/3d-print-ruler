@@ -64,9 +64,11 @@ def build_recess() -> PartLike:
 # anchor band, zero reach - free entry), bulges progressively INWARD to a
 # rounded squeeze peak that dips inside the bead's own swept reach, then
 # releases into the socket's mouth on the groove circle itself.
-COLLAR_TAB_SQUEEZE_ANGLE_DEG: float = 15.0  # where the squeeze bulge peaks (0 = socket centre line)
+COLLAR_TAB_SQUEEZE_ANGLE_DEG: float = (
+    15.0  # where the squeeze bulge peaks (0 = socket centre line)
+)
 COLLAR_TAB_SQUEEZE_DEPTH: float = (
-    0.4  # how far the bulge dips inside the bead's outer reach - the actual
+    0.5  # how far the bulge dips inside the bead's outer reach - the actual
     # snap interference and THE click-strength knob. 0.25 print-tested with
     # no felt lock; raise if the click is weak, lower if the joint jams.
 )

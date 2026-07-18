@@ -56,7 +56,9 @@ MIDDLE_STEP_FILLET_RADIUS: Final[float] = 1.2
 FOLD_CLOSED_ANGLE_DEG: Final[float] = 90.0
 
 RIVET_POCKET_RADIUS: Final[float] = (
-    (RIVET_PIN_DIAMETER + RIVET_PIN_CLEARANCE) / 2 + RIVET_HEAD_OVERHANG + RIVET_POCKET_CLEARANCE
+    (RIVET_PIN_DIAMETER + RIVET_PIN_CLEARANCE) / 2
+    + RIVET_HEAD_OVERHANG
+    + RIVET_POCKET_CLEARANCE
 )
 
 COLLAR_INNER_RADIUS: Final[float] = RIVET_POCKET_RADIUS + 0.15
@@ -106,7 +108,9 @@ RECESS_OUTER_RADIUS: Final[float] = (
     + COLLAR_TAB_RADIAL_THICKNESS
     + COLLAR_RADIAL_CLEARANCE
 )
-RECESS_HEIGHT: Final[float] = -SEGMENT_CONNECTOR_AIR_GAP + COLLAR_HEIGHT + COLLAR_Z_CLEARANCE
+RECESS_HEIGHT: Final[float] = (
+    -SEGMENT_CONNECTOR_AIR_GAP + COLLAR_HEIGHT + COLLAR_Z_CLEARANCE
+)
 
 # Full channel height: the tab runs as one piece from the Segment's own
 # underside (z=0, the recess opening) all the way up to the recess ceiling,
