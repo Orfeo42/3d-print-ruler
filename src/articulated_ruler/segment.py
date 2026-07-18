@@ -8,7 +8,7 @@ if __name__ == "__main__" and __package__ in (None, ""):
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from build123d import Align, Axis, Box, Cylinder, Edge, Part, Pos, chamfer, fillet
+from build123d import Align, Axis, Box, Cylinder, Edge, Part, Pos, Rotation, chamfer, fillet
 
 from .constants import (
     CONNECTOR_STACK_DEPTH,
@@ -27,7 +27,7 @@ from .constants import (
     BOTTOM_EDGE_FILLET_RADIUS,
 )
 from .geometry import ALIGN_CENTER_BOTTOM, ALIGN_LEFT_BOTTOM, Align3, PartLike, outer_rim_edges, require_solid
-from .pivot_collar import build_recess, build_tab
+from .pivot_collar import build_recess, build_tab, build_tab_relief
 from .rivet import build_rivet
 
 
@@ -89,9 +89,15 @@ def build_segment(
         ]
     part: PartLike = fillet(free_edges, radius=FREE_TIP_FILLET_RADIUS) if free_edges else box
 
-    for pivot_x, region_lo, jointed in (
-        (TIP_CAP_RADIUS, 0.0, left_joint),
-        (spec.length - TIP_CAP_RADIUS, spec.length - TIP_CAP_RADIUS, right_joint),
+    # The tab (and its relief void) point their socket toward the Segment's
+    # interior on both tips - the right tip's is rotated 180deg. Pointing it
+    # at the tip's own nose would leave only a ~0.4mm wall between the
+    # relief void and the cap edge, a sliver the bottom rim fillet then
+    # eats through. The catch itself is mirror symmetric, so orientation is
+    # free.
+    for pivot_x, region_lo, tab_rotation_deg, jointed in (
+        (TIP_CAP_RADIUS, 0.0, 0.0, left_joint),
+        (spec.length - TIP_CAP_RADIUS, spec.length - TIP_CAP_RADIUS, 180.0, right_joint),
     ):
         if not jointed:
             continue
@@ -103,10 +109,12 @@ def build_segment(
         )
         corners: PartLike = region - roundoff
         part = require_solid(part - corners + Pos(pivot_x, 0, 0) * build_rivet(hole_radius))
+        orient = Pos(pivot_x, 0, 0) * Rotation(0, 0, tab_rotation_deg)
         part = require_solid(
             part
             - Pos(pivot_x, 0, 0) * build_recess()
-            + Pos(pivot_x, 0, 0) * build_tab()
+            - orient * build_tab_relief()
+            + orient * build_tab()
         )
 
     mid_lo: float = (TIP_CAP_RADIUS + THICKENED_MIDDLE_CLEARANCE) if left_joint else 0.0
