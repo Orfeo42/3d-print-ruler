@@ -87,12 +87,13 @@ COLLAR_TAB_RADIAL_THICKNESS: Final[float] = 1.0
 # intersection volume), welding the joint shut instead of just making it
 # stiff. This is a bare, near-zero but REAL gap.
 COLLAR_TAB_RADIAL_CLEARANCE: Final[float] = 0.05
-COLLAR_TAB_HEIGHT: Final[float] = 0.6
 
-# Off Z=0 on purpose: a tab starting exactly there gets its own thin bottom
-# edges swept into BOTTOM_EDGE_FILLET_RADIUS and fails outright (insufficient
-# material at the tab's thickness).
-COLLAR_TAB_Z_OFFSET: Final[float] = 0.1
+# Tab grows straight off the Segment's own underside (the recess opening),
+# no air gap below it. The old 0.1 lift existed because an EARLIER tab
+# shape (the thin cantilever) failed the Segment's 0.4mm bottom-rim fillet
+# when its own thin edges sat exactly at z=0 - verified the current
+# hanging-band shape builds clean at z=0, so the lift is gone.
+COLLAR_TAB_Z_OFFSET: Final[float] = 0.0
 
 # How far the tab's own peak pokes past RECESS_OUTER_RADIUS into solid
 # Segment material - its own anchor, no separate root piece.
@@ -106,5 +107,10 @@ RECESS_OUTER_RADIUS: Final[float] = (
     + COLLAR_RADIAL_CLEARANCE
 )
 RECESS_HEIGHT: Final[float] = -SEGMENT_CONNECTOR_AIR_GAP + COLLAR_HEIGHT + COLLAR_Z_CLEARANCE
+
+# Full channel height: the tab runs as one piece from the Segment's own
+# underside (z=0, the recess opening) all the way up to the recess ceiling,
+# fusing with the Segment there too - not a short band floating mid-channel.
+COLLAR_TAB_HEIGHT: Final[float] = RECESS_HEIGHT
 
 NUM_SEGMENTS: Final[int] = 3
