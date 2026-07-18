@@ -79,23 +79,8 @@ COLLAR_TAB_FILLET_RADIUS: Final[float] = 0.05
 # biggest reach, plus a safety margin.
 COLLAR_OUTER_RADIUS: Final[float] = CONNECTOR_WIDTH / 2 - COLLAR_BEAD_RADIUS - 0.2
 
-# 50 (up from 36): the band is now a flexing spring beam anchored at its
-# angular ends - a longer beam bends further at the same strain. PLA
-# bending strain at the current squeeze depth works out to ~3.5% mid-span,
-# borderline; lower COLLAR_TAB_SQUEEZE_DEPTH first if a print cracks.
-COLLAR_TAB_HALF_ANGLE_DEG: Final[float] = 50.0
+COLLAR_TAB_HALF_ANGLE_DEG: Final[float] = 36.0
 COLLAR_TAB_RADIAL_THICKNESS: Final[float] = 1.0
-
-# Spring-band parameters: the tab is a thin band (1.5x nozzle width) with
-# an empty relief gap carved behind it so it can bow outward when the bead
-# passes, instead of relying on bulk plastic compression. The relief gap
-# must exceed the squeeze depth (max deflection) with margin. The top gap
-# frees the band's mid-span from the recess ceiling (a fused top = no
-# flex); the anchor ends stay full height and fused into Segment bulk.
-COLLAR_TAB_BAND_THICKNESS: Final[float] = 0.6
-COLLAR_TAB_RELIEF_GAP: Final[float] = 0.5
-COLLAR_TAB_TOP_GAP: Final[float] = 0.3
-COLLAR_TAB_RELIEF_HALF_ANGLE_DEG: Final[float] = 35.0
 
 # True zero clearance fuses the Segment and Connector into one solid at the
 # tab (verified: `seg + conn` came back as 1 solid with genuine nonzero
