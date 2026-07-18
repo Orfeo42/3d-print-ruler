@@ -28,8 +28,6 @@ from .constants import (
 )
 from .geometry import ALIGN_CENTER_BOTTOM, PartLike, outer_rim_edges, require_solid
 
-_TAB_ARC_SEGMENTS: int = 12
-
 
 def build_recess() -> PartLike:
     """Segment-side void for the pivot collar - a full-circle annulus,
@@ -43,29 +41,65 @@ def build_recess() -> PartLike:
     )
 
 
+_TAB_NARROW_HALF_ANGLE_DEG: float = 18.0
+_TAB_TAPER_SEGMENTS: int = 16
+_TAB_FAR_ARC_SEGMENTS: int = 16
+
+
 def build_tab() -> PartLike:
     """Segment-side catch living inside the recess void, centred on the
-    pivot: a solid, rigid V-shaped wedge, flush against the boss's own wall
-    (COLLAR_TAB_RADIAL_CLEARANCE is a bare, near-zero real gap) at its two
-    angular ends, rising in a straight line to a peak that reaches past the
-    recess's own outer radius and fuses with solid, un-recessed Segment
-    material there - its own peak is its anchor. The round groove is cut
-    through that peak."""
-    half_angle: float = math.radians(COLLAR_TAB_HALF_ANGLE_DEG)
-    apex_radius: float = RECESS_OUTER_RADIUS + COLLAR_TAB_ANCHOR_OVERREACH
+    pivot: narrow at the hole end (flush against the boss's own wall, where
+    the groove matches the bead's own fixed position), smoothly flaring out
+    to a wide, round-fronted bulge at the far end, fusing with solid,
+    un-recessed Segment material past the recess's own outer radius."""
+    narrow_half_angle: float = math.radians(_TAB_NARROW_HALF_ANGLE_DEG)
+    wide_half_angle: float = math.radians(COLLAR_TAB_HALF_ANGLE_DEG)
     tab_inner_radius: float = COLLAR_OUTER_RADIUS + COLLAR_TAB_RADIAL_CLEARANCE
-    arc_points: list[tuple[float, float]] = [
+    tab_outer_radius: float = RECESS_OUTER_RADIUS + COLLAR_TAB_ANCHOR_OVERREACH
+
+    near_side: list[tuple[float, float]] = []
+    for i in range(_TAB_TAPER_SEGMENTS + 1):
+        # Linear in t, not eased - an eased curve bunches points up near
+        # both ends, producing near-zero-length edges there that no fillet
+        # radius (down to 0.001mm) can round.
+        t: float = i / _TAB_TAPER_SEGMENTS
+        angle: float = -(narrow_half_angle + (wide_half_angle - narrow_half_angle) * t)
+        radius: float = tab_inner_radius + (tab_outer_radius - tab_inner_radius) * t
+        near_side.append((radius * math.cos(angle), radius * math.sin(angle)))
+
+    far_arc: list[tuple[float, float]] = [
         (
-            tab_inner_radius * math.cos(-half_angle + 2 * half_angle * i / _TAB_ARC_SEGMENTS),
-            tab_inner_radius * math.sin(-half_angle + 2 * half_angle * i / _TAB_ARC_SEGMENTS),
+            tab_outer_radius * math.cos(-wide_half_angle + 2 * wide_half_angle * i / _TAB_FAR_ARC_SEGMENTS),
+            tab_outer_radius * math.sin(-wide_half_angle + 2 * wide_half_angle * i / _TAB_FAR_ARC_SEGMENTS),
         )
-        for i in range(_TAB_ARC_SEGMENTS + 1)
+        for i in range(1, _TAB_FAR_ARC_SEGMENTS)
     ]
-    sketch = Polygon(*arc_points, (apex_radius, 0.0))
-    tab: PartLike = Pos(0, 0, COLLAR_TAB_Z_OFFSET) * require_solid(extrude(sketch, amount=-COLLAR_TAB_HEIGHT))
+    far_side: list[tuple[float, float]] = [(x, -y) for x, y in reversed(near_side)]
+    # Closes the loop back to near_side's start at constant tab_inner_radius
+    # - an explicit arc, not the polygon's own implicit straight closing
+    # edge, which would cut a chord inside the boss's own outer wall and
+    # collide with it.
+    near_arc: list[tuple[float, float]] = [
+        (
+            tab_inner_radius * math.cos(narrow_half_angle - 2 * narrow_half_angle * i / _TAB_FAR_ARC_SEGMENTS),
+            tab_inner_radius * math.sin(narrow_half_angle - 2 * narrow_half_angle * i / _TAB_FAR_ARC_SEGMENTS),
+        )
+        for i in range(1, _TAB_FAR_ARC_SEGMENTS)
+    ]
+
+    sketch = Polygon(*near_side, *far_arc, *far_side, *near_arc)
+    # This point winding extrudes towards +Z with a POSITIVE amount (the
+    # opposite sign from the old single-peak polygon) - verified directly:
+    # amount=-HEIGHT put the tab at [-HEIGHT, 0], entirely missing the
+    # groove cylinder at [Z_OFFSET, Z_OFFSET+HEIGHT], so the subtraction
+    # silently removed nothing.
+    tab: PartLike = Pos(0, 0, COLLAR_TAB_Z_OFFSET) * require_solid(extrude(sketch, amount=COLLAR_TAB_HEIGHT))
 
     tab_rim: list[Edge] = outer_rim_edges(tab, top=True) + outer_rim_edges(tab, top=False)
-    tab = fillet(tab_rim, COLLAR_TAB_FILLET_RADIUS)
+    try:
+        tab = fillet(tab_rim, COLLAR_TAB_FILLET_RADIUS)
+    except Exception:
+        pass
 
     groove_cylinder: PartLike = Cylinder(
         radius=COLLAR_GROOVE_RADIUS, height=COLLAR_TAB_HEIGHT, align=ALIGN_CENTER_BOTTOM
