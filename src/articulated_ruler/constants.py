@@ -79,7 +79,7 @@ COLLAR_TAB_FILLET_RADIUS: Final[float] = 0.05
 # biggest reach, plus a safety margin.
 COLLAR_OUTER_RADIUS: Final[float] = CONNECTOR_WIDTH / 2 - COLLAR_BEAD_RADIUS - 0.2
 
-COLLAR_TAB_HALF_ANGLE_DEG: Final[float] = 20.0
+COLLAR_TAB_HALF_ANGLE_DEG: Final[float] = 36.0
 COLLAR_TAB_RADIAL_THICKNESS: Final[float] = 1.0
 
 # True zero clearance fuses the Segment and Connector into one solid at the
@@ -87,7 +87,7 @@ COLLAR_TAB_RADIAL_THICKNESS: Final[float] = 1.0
 # intersection volume), welding the joint shut instead of just making it
 # stiff. This is a bare, near-zero but REAL gap.
 COLLAR_TAB_RADIAL_CLEARANCE: Final[float] = 0.05
-COLLAR_TAB_HEIGHT: Final[float] = 0.8
+COLLAR_TAB_HEIGHT: Final[float] = 0.6
 
 # Off Z=0 on purpose: a tab starting exactly there gets its own thin bottom
 # edges swept into BOTTOM_EDGE_FILLET_RADIUS and fails outright (insufficient
